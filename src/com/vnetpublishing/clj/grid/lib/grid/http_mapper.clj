@@ -1,5 +1,6 @@
 (ns com.vnetpublishing.clj.grid.lib.grid.http-mapper
-  (:require [com.vnetpublishing.clj.grid.lib.grid.util :refer :all]))
+  (:require [com.vnetpublishing.clj.grid.lib.grid.util :refer :all])
+  (:import [java.net URI]))
 
 (def ^:private mappings (atom []))
 
@@ -17,9 +18,10 @@
     (swap! mappings conj {:class clz :suffix suffix}))
 
 (defn get-default-mapping
-   (first (keep #(if (:default %1)
-                     (:class %1))
-                @mappings)))
+  []
+    (first (keep #(if (:default %1)
+                      (:class %1))
+                 @mappings)))
 
 (defn set-default-mapping
   [clz]
