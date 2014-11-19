@@ -38,4 +38,3 @@
                                    path)
                           @mappings))
              (get-default-mapping))))
-
