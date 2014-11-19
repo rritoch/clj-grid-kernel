@@ -13,3 +13,25 @@
   [seq value]  
     (some (partial = value) 
           seq))
+
+(defmacro when-all-let
+  [bindings & body]
+    (when-not (vector? bindings) 
+              (throw (IllegalArgumentException. (str (first &form) " requires a vector for its binding in " 
+                                                     *ns* 
+                                                     ":" 
+                                                     (:line (meta &form))))))
+    (when-not (even? (count bindings)) 
+              (throw (IllegalArgumentException. (str (first &form) 
+                                                     " requires an even number of forms in binding vector in " 
+                                                     *ns* 
+                                                     ":" 
+                                                     (:line (meta &form))))))
+    (loop [a (partition 2 bindings)
+           b (cons 'do body)]
+          (if (empty? a)
+              b
+              (recur (butlast a)
+                     (cons `when-let
+                           (conj (list b)
+                                 (vec (last a))))))))
