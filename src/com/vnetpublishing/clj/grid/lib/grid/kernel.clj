@@ -673,4 +673,8 @@
                    (finally (.setContextClassLoader (Thread/currentThread)
                                                     ccl)))))
 
-
+(defn servlet-request-resource-path
+  []
+  (str "/"
+       (.toString (.relativize (URI. (.getContextPath *servlet-request*))
+                               (URI. (.getRequestURI *servlet-request*))))))
