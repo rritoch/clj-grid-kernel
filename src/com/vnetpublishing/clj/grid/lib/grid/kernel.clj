@@ -36,6 +36,8 @@
 
 (def ^:dynamic *local-web-root* "")
 
+(def ^:dynamic *project-paths* [])
+
 (def ^:dynamic *transaction* 
   (atom {:loaded (atom (set []))
          :class-data (atom {})}))
@@ -150,6 +152,63 @@
     (let [bt (.getStackTrace (Thread/currentThread))]
       (rest (rest bt))))
 
+(defn get-project-resource
+  [path]
+  
+  (let [l-path (clojure.string/replace path 
+                                       "/"
+                                       *ds*)
+        paths (map (partial #(File. (str %2 *ds* %1)) l-path)
+                    *project-paths*)
+        f (first (filter #(.isFile %) paths))]
+    (if f (.toURL (.toURI f)))))
+
+(defn get-bundle-resource
+  [path]
+  (if *osgi-context*
+      (let [bundles (.getBundles *osgi-context*)
+            n-bundles (count bundles)]
+           (kdebug (str "get-bundle-resource " path))
+           
+           (loop [n 0 r nil]
+             (if (or (>= n n-bundles)
+                     r)
+                 r
+                 (recur (+ n 1)
+                        (or (.getResource (nth bundles n) path)
+                            (.getResource (nth bundles n) (str "META-INF/resources/"
+                                                               path)))))))))
+             
+
+(defn get-local-resource
+  [path]
+  (let [f (File. (clojure.string/replace path 
+                                         "/"
+                                         *ds*))]
+    (if (.isFile f)
+        (.toURL (.toURI f)))))
+
+
+
+; Deploy Order
+;
+; index.jsp
+; WEB-INF/resources/index.jsp
+; WEB-INF/lib/*.jar:/META-INF/index.jsp
+; osgi:somemod:/index.jsp
+; http://www.myrepo.com/index.jsp
+
+(defn get-resource
+  [path]
+    (let [r-path (.getPath (.relativize (.toURI (File. *ds*))
+                                        (.toURI (File. (clojure.string/replace path
+                                                                             "/"
+                                                                             *ds*)))))]
+          (or (get-local-resource r-path)
+              (get-project-resource r-path)
+              (io/resource (str "META-INF/resources/" r-path))
+              (get-bundle-resource r-path))))
+
 (defn glocate-absolute
   "Locate absolute resource"
   [path]
@@ -181,7 +240,9 @@
                         (.toString))
             _ (kdebug (str "Checking "
                            r-path))
-            caller-path-r (if caller-path (io/resource r-path))
+            caller-path-r (if caller-path (or (get-project-resource r-path)
+                                              (io/resource r-path)
+                                              (get-resource r-path)))
             cr (if caller-path-r
                    (.toString caller-path-r))]
         (if caller-path-r
@@ -514,48 +575,7 @@
     (if (and *inc* (not (in? (deref *inc*) path)))
         (swap! *inc* into [path])))
 
-(defn get-bundle-resource
-  [path]
-  (if *osgi-context*
-      (let [bundles (.getBundles *osgi-context*)
-            n-bundles (count bundles)]
-           (kdebug (str "get-bundle-resource " path))
-           
-           (loop [n 0 r nil]
-             (if (or (>= n n-bundles)
-                     r)
-                 r
-                 (recur (+ n 1)
-                        (or (.getResource (nth bundles n) path)
-                            (.getResource (nth bundles n) (str "META-INF/resources/"
-                                                               path)))))))))
-             
 
-(defn get-local-resource
-  [path]
-  (let [f (File. (clojure.string/replace path 
-                                         "/"
-                                         *ds*))]
-    (if (.isFile f)
-        (.toURL (.toURI f)))))
-
-; Deploy Order
-;
-; index.jsp
-; WEB-INF/resources/index.jsp
-; WEB-INF/lib/*.jar:/META-INF/index.jsp
-; osgi:somemod:/index.jsp
-; http://www.myrepo.com/index.jsp
-
-(defn get-resource
-  [path]
-    (let [r-path (.getPath (.relativize (.toURI (File. *ds*))
-                                        (.toURI (File. (clojure.string/replace path
-                                                                             "/"
-                                                                             *ds*)))))]
-          (or (get-local-resource r-path)
-              (io/resource (str "META-INF/resources/" r-path))
-              (get-bundle-resource r-path))))
 
 (defn install-local-bundle
   [filename]
