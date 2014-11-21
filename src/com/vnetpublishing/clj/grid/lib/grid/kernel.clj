@@ -154,14 +154,13 @@
 
 (defn get-project-resource
   [path]
-  
-  (let [l-path (clojure.string/replace path 
-                                       "/"
-                                       *ds*)
-        paths (map (partial #(File. (str %2 *ds* %1)) l-path)
-                    *project-paths*)
-        f (first (filter #(.isFile %) paths))]
-    (if f (.toURL (.toURI f)))))
+    (let [l-path (clojure.string/replace path 
+                                         "/"
+                                         *ds*)
+          paths (map (partial #(File. (str %2 *ds* %1)) l-path)
+                     *project-paths*)
+          f (first (filter #(.isFile %) paths))]
+         (if f (.toURL (.toURI f)))))
 
 (defn get-bundle-resource
   [path]
