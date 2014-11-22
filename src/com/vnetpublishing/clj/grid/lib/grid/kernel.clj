@@ -11,7 +11,8 @@
            [clojure.lang DynamicClassLoader
                          Compiler]
            [org.osgi.framework Constants]
-           [java.util ResourceBundle
+           [java.util Date
+                      ResourceBundle
                       Hashtable]))
 
 ; Context vars
@@ -451,57 +452,86 @@
       (warn (str "ginc "
                  (to-message lang/LOGTOKEN_NO_DISPATCH)))))
 
+(defn fload
+  [path r-ns]
+    (let [r (URI. path)
+          i (:loaded (deref *transaction*))]
+         (swap! i conj path)
+         (load-resource r)
+         (when-let [cur-ns (find-ns r-ns)]
+                   (alter-meta! cur-ns 
+                                assoc
+                                :fload-timestamp
+                                (.getTime (Date.))))))
+
+(defn funload
+  [path r-ns]
+    (let [i (:loaded (deref *transaction*))]
+         (remove-ns r-ns)
+         (swap! i disj path)))
+
+(defn fscript-expired?
+  [path r-ns]
+    (let [ftimestamp (:fload-timestamp (meta (find-ns r-ns)))
+          r (URI. path)
+          f (if (= "file" (.getScheme r))
+                (File. r))
+          ]
+         (and ftimestamp
+              f
+              (> (.lastModified f)
+                 ftimestamp))))
+
 (defn finc
   "Function Include grid resource"
   [path base-ns]
     (kdebug (str "finc " path " " base-ns))
     (if *dispatch*
-        (if (find-ns (symbol base-ns))
-            (run-fscripts base-ns)
-            (let [[c rns] (gnslocate path
-                                     base-ns
+        (let [[c rns] (gnslocate path
+                                 base-ns
                                      (.getClassName (second (backtrace))))
-                  rns-sym (symbol rns)
-                  r (if c (java.net.URI. c))
-                  i (:loaded (deref *transaction*))]
+              rns-sym (symbol rns)
+              i (:loaded (deref *transaction*))]
+             (if (and c
+                      (find-ns rns-sym)
+                      (fscript-expired? c rns-sym))
+                  (funload c rns-sym))
+             (if (and c
+                      (not (in? (deref i) c))
+                      (not (find-ns rns-sym)))
+                 (fload c rns-sym))
                  (if (and c
-                          (not (in? (deref i) c))
-                          (not (find-ns rns-sym)))
-                     (do (swap! i conj c)
-                         (load-resource r)))
-                 (if (and c
-                          (find-ns rns-sym))
-                     (do (if (not (in? (deref i) c))
-                             (swap! i conj c))
-                         (run-fscripts rns))
+                      (find-ns rns-sym))
+                 (do (if (not (in? (deref i) c))
+                         (swap! i conj c))
+                     (run-fscripts rns))
                      (warn (str "finc "
                                 path 
                                 " "
-                                base-ns
-                                " "
-                                (to-message lang/LOGTOKEN_NOT_FOUND))))))
+                            base-ns
+                            " "
+                                (to-message lang/LOGTOKEN_NOT_FOUND)))))
     (warn (str "finc "
                  (to-message lang/LOGTOKEN_NO_DISPATCH)))))
-
 
 (defn frequire
   "Function Include grid resource"
   [path base-ns]
     (kdebug (str "finc " path " " base-ns))
     (if *dispatch*
-        (if (find-ns (symbol base-ns))
-            (run-fscripts base-ns)
-            (let [[c rns] (gnslocate path
+        (let [[c rns] (gnslocate path
                                      base-ns
                                      (.getClassName (second (backtrace))))
-                  rns-sym (symbol rns)
-                  r (if c (java.net.URI. c))
-                  i (:loaded (deref *transaction*))]
-                 (if (and c
-                          (not (in? (deref i) c))
-                          (not (find-ns rns-sym)))
-                     (do (swap! i conj c)
-                         (load-resource r)))
+              rns-sym (symbol rns)
+              i (:loaded (deref *transaction*))]
+              (if (and c
+                       (find-ns rns-sym)
+                       (fscript-expired? c rns-sym))
+                  (funload c rns-sym))
+              (if (and c
+                       (not (in? (deref i) c))
+                       (not (find-ns rns-sym)))
+                     (fload c rns-sym))
                  (if (and c
                           (find-ns rns-sym))
                      (do (if (not (in? (deref i) c))
@@ -512,7 +542,7 @@
                                              " "
                                              base-ns
                                              " "
-                                             (to-message lang/LOGTOKEN_NOT_FOUND)))))))
+                                             (to-message lang/LOGTOKEN_NOT_FOUND))))))
         (warn (str "frequire "
                    (to-message lang/LOGTOKEN_NO_DISPATCH)))))
 
