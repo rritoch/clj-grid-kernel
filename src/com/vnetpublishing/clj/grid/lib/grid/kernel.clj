@@ -147,6 +147,22 @@
                             (clojure.string/split (munge name)
                                                   #"\."))))
 
+(defn path-to-ns
+  [path]
+    (let [rel-path (loop [p path]
+                     (if (not= (first p) \/)
+                         p
+                         (recur (subs p 1))))
+          _ (debug (str "rel-path: " rel-path))
+          ns-path (clojure.string/replace rel-path "_" "-")
+          std-path (clojure.string/replace ns-path *ds* "/")
+          path-parts (clojure.string/split std-path #"/")
+          path-part-last-raw (last path-parts)
+          path-last (if (.endsWith path-part-last-raw ".clj")
+                        (subs path-part-last-raw 0 (- (count path-part-last-raw) 4))
+                        (last path-parts))]
+    (clojure.string/join "." (concat (butlast path-parts) [path-last]))))
+
 (defn backtrace
   []
     (let [bt (.getStackTrace (Thread/currentThread))]
@@ -467,6 +483,38 @@
     (warn (str "finc "
                  (to-message lang/LOGTOKEN_NO_DISPATCH)))))
 
+
+(defn frequire
+  "Function Include grid resource"
+  [path base-ns]
+    (kdebug (str "finc " path " " base-ns))
+    (if *dispatch*
+        (if (find-ns (symbol base-ns))
+            (run-fscripts base-ns)
+            (let [[c rns] (gnslocate path
+                                     base-ns
+                                     (.getClassName (second (backtrace))))
+                  rns-sym (symbol rns)
+                  r (if c (java.net.URI. c))
+                  i (:loaded (deref *transaction*))]
+                 (if (and c
+                          (not (in? (deref i) c))
+                          (not (find-ns rns-sym)))
+                     (do (swap! i conj c)
+                         (load-resource r)))
+                 (if (and c
+                          (find-ns rns-sym))
+                     (do (if (not (in? (deref i) c))
+                             (swap! i conj c))
+                         (run-fscripts rns))
+                     (throw (Exception. (str "frequire "
+                                             path 
+                                             " "
+                                             base-ns
+                                             " "
+                                             (to-message lang/LOGTOKEN_NOT_FOUND)))))))
+        (warn (str "frequire "
+                   (to-message lang/LOGTOKEN_NO_DISPATCH)))))
 
 (defn grequire
   "Require grid resource"
