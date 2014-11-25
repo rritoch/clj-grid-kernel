@@ -715,58 +715,78 @@
   [k v]
   `(swap! (com.vnetpublishing.clj.grid.lib.grid.kernel/get-ob-transaction-state (symbol "symbol")) assoc ~k ~v))
 
-
 (defn get-module
-  [sym]
-  (if (get @modules sym)
-    (get @modules sym)
-    (let [mod-class (try (resolve sym)
-                         (catch Throwable t nil))
-          mod-name (name sym)]
-      (if mod-class
-          (do (swap! modules assoc sym (create-instance mod-class []))
+  [mod-ns-sym]
+  (if (get @modules mod-ns-sym)
+    (get @modules mod-ns-sym)
+    (let [mod-name (name mod-ns-sym)
+          _ (try (load mod-name)
+                      (catch Throwable t nil))
+          mod-ns (find-ns mod-ns-sym)]
+      (if mod-ns
+          (do (swap! modules assoc mod-ns-sym mod-ns)
               (if *osgi-context*
                   (.registerService *osgi-context* 
-                                    mod-name
-                                    (get @modules sym)
+                                    clojure.lang.Namespace
+                                    (get @modules mod-ns-sym)
                                     (let [t (Hashtable.)]
                                          (.put t "description" "module")
                                          t)))
-              (get @modules sym))
+              (get @modules mod-ns-sym))
           ; look through bundles
           (let [bundles (if *osgi-context*
                             (.getBundles *osgi-context*)
                             (do (debug "OSGI Context missing???")
                                 '()))
                 n-bundles (count bundles)]
-                (loop [n 0 r nil]
-                      (if (or (>= n n-bundles)
+               (loop [n 0 r nil]
+                     (if (or (>= n n-bundles)
                               r)
-                          (if r
-                              (do (kdebug (str "Found module "
-                                               mod-name))
-                                   (.getService *osgi-context*
-                                                r))
+                         (if r
+                             (do (kdebug (str "Found module "
+                                              mod-name))
+                                  (.getService *osgi-context*
+                                               r))
                               
-                              (do (kdebug (str "WARNING: Module "
-                                               mod-name
-                                               " Not found!!!"))
-                                  nil))
-                          (recur (+ n 1)
-                                 (do (kdebug (str "Checking bundle "
-                             (.getSymbolicName (nth bundles n)) 
-                             " for module "
-                             mod-name))
-                                     (.getServiceReference (.getBundleContext (nth bundles n))
-                                                           mod-name))))))))))
+                             (do (kdebug (str "WARNING: Module "
+                                              mod-name
+                                              " Not found!!!"))
+                                 nil))
+                         (recur (+ n 1)
+                                (do (kdebug (str "Checking bundle "
+                                         (.getSymbolicName (nth bundles n)) 
+                                         " for module "
+                                         mod-name))
+                                    (.getServiceReference (.getBundleContext (nth bundles n))
+                                                          mod-name))))))))))
+
+(defn find-other-ns
+  [t-ns f-sym]
+    (let [ccl (.getContextClassLoader (Thread/currentThread))
+          dcl (.getClassLoader (class t-ns))]
+               (try (with-bindings {Compiler/LOADER dcl}
+                         (.setContextClassLoader (Thread/currentThread) dcl)
+                         (find-ns f-sym))
+                   (finally (.setContextClassLoader (Thread/currentThread)
+                                                    ccl)))))
 
 (defn call-other
-  [ob f-sym & args]
+  [t-ns f-sym & args]
     (let [ccl (.getContextClassLoader (Thread/currentThread))
-          dcl (.getClassLoader (class ob))]
+          dcl (.getClassLoader (class t-ns))]
                (try (with-bindings {Compiler/LOADER dcl}
-                                   (.setContextClassLoader (Thread/currentThread) dcl)
-                                   (java-method-apply ob f-sym args))
+                         (.setContextClassLoader (Thread/currentThread) dcl)
+                         (let [m (get (ns-publics t-ns) f-sym)
+                               f (and (var? m)
+                                      (fn? (var-get m))
+                                      (var-get m))]
+                              (if f
+                                  (apply f args)
+                                  (throw (Exception. (str "call-other: Function " 
+                                                          (.getName t-ns) 
+                                                          "/" 
+                                                          f-sym 
+                                                          " not found!"))))))
                    (finally (.setContextClassLoader (Thread/currentThread)
                                                     ccl)))))
 
