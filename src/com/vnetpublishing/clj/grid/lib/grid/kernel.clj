@@ -715,6 +715,16 @@
   [k v]
   `(swap! (com.vnetpublishing.clj.grid.lib.grid.kernel/get-ob-transaction-state (symbol "symbol")) assoc ~k ~v))
 
+(defn ^:private get-bundle-ns-service-ref
+  [bundle mod-ns]
+    (let [ctx (.getBundleContext bundle)
+          refs (.getServiceRefrences clojure.lang.Namespace nil)]
+      
+      (first (filter (partial (fn [mod-ns r]
+                                (= mod-ns (.getName (.getService r))))
+                              mod-ns)
+                     refs))))
+
 (defn get-module
   [mod-ns-sym]
   (if (get @modules mod-ns-sym)
@@ -757,8 +767,8 @@
                                          (.getSymbolicName (nth bundles n)) 
                                          " for module "
                                          mod-name))
-                                    (.getServiceReference (.getBundleContext (nth bundles n))
-                                                          mod-name))))))))))
+                                    (get-bundle-ns-service-ref (nth bundles n)
+                                                               mod-ns-sym))))))))))
 
 (defn find-other-ns
   [t-ns f-sym]

@@ -8,9 +8,13 @@
 
 (defn get-grid-module 
   [context sym]
-  (or (get @grid-modules name)
-      (let [clz (resolve sym)
-            m (create-instance clz [])]
-        (swap! grid-modules assoc sym m)
-        m)))
+    (let [full-sym (symbol (str (name sym) ".module"))]
+         (or (get @grid-modules name)
+             (when-let [m (find-ns full-sym)]
+                 (swap! grid-modules assoc sym m)
+                 m)
+             (do (load (name full-sym))
+                 (when-let [m (find-ns full-sym)]
+                         (swap! grid-modules assoc sym m)
+                         m)))))
 
