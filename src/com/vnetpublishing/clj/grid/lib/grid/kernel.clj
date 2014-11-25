@@ -424,7 +424,7 @@
     (if (= "file" (.getScheme r))
         (do (kdebug (str "load-file " (.getPath r)))
             (load-file (.getPath r)))
-        (do (kdebug "load-reader")
+        (do (kdebug (str "load-reader - " (.toString r)))
             (load-reader (InputStreamReader. (.openStream (.toURL r)))))))
 
 (defn run-fscripts
@@ -718,8 +718,9 @@
 (defn ^:private get-bundle-ns-service-ref
   [bundle mod-ns]
     (let [ctx (.getBundleContext bundle)
-          refs (.getServiceRefrences clojure.lang.Namespace nil)]
-      
+          refs (if ctx 
+                   (.getServiceReferences ctx clojure.lang.Namespace nil)
+                   '())]
       (first (filter (partial (fn [mod-ns r]
                                 (= mod-ns (.getName (.getService r))))
                               mod-ns)
@@ -730,8 +731,8 @@
   (if (get @modules mod-ns-sym)
     (get @modules mod-ns-sym)
     (let [mod-name (name mod-ns-sym)
-          _ (try (load mod-name)
-                      (catch Throwable t nil))
+          _ (when-let [r (io/resource (str (clojure.string/replace mod-name "." "/") ".clj"))]
+                      (load-resource (.toURI r)))
           mod-ns (find-ns mod-ns-sym)]
       (if mod-ns
           (do (swap! modules assoc mod-ns-sym mod-ns)
