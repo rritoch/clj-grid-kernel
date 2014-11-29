@@ -801,6 +801,23 @@
                    (finally (.setContextClassLoader (Thread/currentThread)
                                                     ccl)))))
 
+(defn extern-callable?
+  [t-ns f-sym]
+    (let [ccl (.getContextClassLoader (Thread/currentThread))
+          dcl (.getClassLoader (class t-ns))]
+               (try (with-bindings {Compiler/LOADER dcl}
+                         (.setContextClassLoader (Thread/currentThread) dcl)
+                         (let [m (get (ns-publics t-ns) f-sym)
+                               f (and (var? m)
+                                      (fn? (var-get m))
+                                      (var-get m))]
+                              (if f
+                                  true
+                                  false)))
+                   (finally (.setContextClassLoader (Thread/currentThread)
+                                                    ccl)))))
+
+
 (defn servlet-request-resource-path
   []
   (str "/"

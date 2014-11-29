@@ -35,3 +35,26 @@
                      (cons `when-let
                            (conj (list b)
                                  (vec (last a))))))))
+
+(defn record-merge-nd
+  "Non-destructive merge map item i into map list q having primary key pk adding matching non-primary keys as vector items"
+  [pk q i] 
+    (if-let [p1 (first (filter (partial (fn [k v i] (= (get i k) v)) 
+                                        pk 
+                                        (get i pk)) q))] 
+      (conj (filterv (partial (fn [k v i] (= (get i k) v)) pk (get i pk)) q) 
+            (into {} (map (partial (fn [pk p1 p2 k] 
+                                       (if (or (= pk k) 
+                                               (not (get p1 k)) 
+                                               (not (get p2 k))) 
+                                           [k (or (get p1 k) (get p2 k))] 
+                                           [k (into 
+                                              (if (instance? java.util.List (get p1 k))
+                                                  (vec (get p1 k))
+                                                  [(get p1 k)])
+                                              (if (instance? java.util.List (get p2 k))
+                                                  (vec (get p2 k))
+                                                  [(get p2 k)]))]))
+                                   pk p1 i) 
+                          (seq (set (concat (keys p1) (keys i))))))) 
+      (conj q i)))
