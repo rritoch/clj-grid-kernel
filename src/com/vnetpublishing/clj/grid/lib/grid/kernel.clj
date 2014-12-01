@@ -777,7 +777,11 @@
           dcl (.getClassLoader (class t-ns))]
                (try (with-bindings {Compiler/LOADER dcl}
                          (.setContextClassLoader (Thread/currentThread) dcl)
-                         (find-ns f-sym))
+                         (eval (cons 'find-ns 
+                                     (conj '() 
+                                           (cons 'quote 
+                                                 (conj '() 
+                                                       f-sym))))))
                    (finally (.setContextClassLoader (Thread/currentThread)
                                                     ccl)))))
 
