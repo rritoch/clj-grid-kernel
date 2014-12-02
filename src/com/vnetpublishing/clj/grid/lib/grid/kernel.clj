@@ -35,6 +35,8 @@
 
 (def ^:dynamic *osgi-context* nil)
 
+(def ^:dynamic *current-module* nil)
+
 (def ^:dynamic *local-web-root* "")
 
 (def ^:dynamic *project-paths* [])
@@ -47,6 +49,9 @@
   (ResourceBundle/getBundle "Messages"))
 
 (def ^:private modules 
+  (atom {}))
+
+(def ^:private module-classloader-map
   (atom {}))
 
 (defn to-message
@@ -424,8 +429,13 @@
     (if (= "file" (.getScheme r))
         (do (kdebug (str "load-file " (.getPath r)))
             (load-file (.getPath r)))
-        (do (kdebug (str "load-reader - " (.toString r)))
-            (load-reader (InputStreamReader. (.openStream (.toURL r)))))))
+        (do (kdebug (str "load-reader - " 
+                         (.toString r) 
+                          " using class loader "
+                          (pr-str (.getContextClassLoader (Thread/currentThread)))))
+            #_(load-reader (InputStreamReader. (.openStream (.toURL r))))
+            
+            (clojure.lang.Reflector/invokeStaticMethod (.loadClass (.getContextClassLoader (Thread/currentThread)) "clojure.lang.Compiler") "load" (object-array [(InputStreamReader.  (.openStream (.toURL r)))])))))
 
 (defn run-fscripts
   [script-ns]
@@ -671,7 +681,7 @@
              ac (.loadClass bundle ac-name)
              _ (kdebug (str "Activator Class: " ac))
              bcl (.getClassLoader ac)
-             _ (kdebug (str "Bundle Class Loader: " bcl))
+             _ (kdebug (str "Bundle Class Loader: " (pr-str bcl)))
              ccl (.getContextClassLoader (Thread/currentThread))
              dcl (DynamicClassLoader. bcl)]
             (try (with-bindings {Compiler/LOADER dcl}
@@ -785,30 +795,47 @@
                    (finally (.setContextClassLoader (Thread/currentThread)
                                                     ccl)))))
 
+(defn set-module-classloader
+  [m cl]
+    (swap! module-classloader-map assoc (.getName m) cl))
+
+(defn get-module-classloader
+  []
+    (if (and *current-module*
+             (get @module-classloader-map (.getName *current-module*)))
+        (get @module-classloader-map (.getName *current-module*))
+        (.getContextClassLoader (Thread/currentThread))))
+
 (defn call-other
   [t-ns f-sym & args]
     (let [ccl (.getContextClassLoader (Thread/currentThread))
-          dcl (.getClassLoader (class t-ns))]
-               (try (with-bindings {Compiler/LOADER dcl}
-                         (.setContextClassLoader (Thread/currentThread) dcl)
-                         (let [m (get (ns-publics t-ns) f-sym)
+          dcl (get-module-classloader)]
+         (kdebug (str "call-other: " 
+                      (.getName t-ns) 
+                      "/" 
+                      f-sym 
+                      " with class loader "
+                      (pr-str dcl)))
+         (try (with-bindings {Compiler/LOADER dcl}
+                             (.setContextClassLoader (Thread/currentThread) dcl)
+                      (let [m (get (ns-publics t-ns) f-sym)
                                f (and (var? m)
                                       (fn? (var-get m))
                                       (var-get m))]
-                              (if f
-                                  (apply f args)
-                                  (throw (Exception. (str "call-other: Function " 
-                                                          (.getName t-ns) 
-                                                          "/" 
-                                                          f-sym 
-                                                          " not found!"))))))
+                           (if f
+                               (apply f args)
+                               (throw (Exception. (str "call-other: Function " 
+                                                       (.getName t-ns) 
+                                                       "/" 
+                                                       f-sym 
+                                                       " not found!"))))))
                    (finally (.setContextClassLoader (Thread/currentThread)
                                                     ccl)))))
 
 (defn extern-callable?
   [t-ns f-sym]
     (let [ccl (.getContextClassLoader (Thread/currentThread))
-          dcl (.getClassLoader (class t-ns))]
+          dcl (get-module-classloader)]
                (try (with-bindings {Compiler/LOADER dcl}
                          (.setContextClassLoader (Thread/currentThread) dcl)
                          (let [m (get (ns-publics t-ns) f-sym)
